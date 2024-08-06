@@ -1,5 +1,3 @@
-Sure! Here's the README document written in English:
-
 # lua_webp
 
 lua_webp is a Lua module for performing WebP image format conversion in Lua. It provides cwebp and dwebp functions for converting images to WebP format and converting WebP images to other formats.
