@@ -17,5 +17,8 @@ int lcwebp_path2webp(lua_State* L);
 int lcwebp_image2webp(lua_State* L);
 int ldwebp_webp2Image(lua_State* L);
 int ldwebp_path2Image(lua_State* L);
+int ldwebp_info(lua_State* L);
+int ldwebp_infoFromPath(lua_State* L);
+int lwebp_version(lua_State* L);
 
 #endif  /* LUA_WEBP_H_ */

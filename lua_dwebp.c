@@ -132,6 +132,55 @@ static int dwebp_webPSaveImage(const WebPDecBuffer* const buffer,
   return ok;
 }
 
+// Bytes per pixel for the forced colorspace formats, or 0 if 'format' is a
+// container format (PNG/PPM/...). Forced colorspaces are exported as raw,
+// tightly packed pixel bytes instead of an image container.
+static int dwebp_forcedBpp(WebPOutputFileFormat format) {
+  switch (format) {
+    case RGB:
+    case BGR:
+      return 3;
+    case RGBA:
+    case BGRA:
+    case ARGB:
+    case rgbA:
+    case bgrA:
+    case Argb:
+      return 4;
+    case RGBA_4444:
+    case RGB_565:
+    case rgbA_4444:
+      return 2;
+    default:
+      return 0;
+  }
+}
+
+// Copies the decoded buffer as tightly packed raw pixels (no stride padding).
+static int dwebp_exportRaw(const WebPDecBuffer* const buffer,
+                           WebPOutputFileFormat format,
+                           unsigned char** out, size_t* out_size) {
+  const int bpp = dwebp_forcedBpp(format);
+  const uint32_t width = buffer->width;
+  const uint32_t height = buffer->height;
+  const uint8_t* row = buffer->u.RGBA.rgba;
+  const int stride = buffer->u.RGBA.stride;
+  const size_t row_bytes = (size_t)width * (size_t)bpp;
+  const size_t total = row_bytes * height;
+  unsigned char* buf;
+  uint32_t y;
+  if (bpp == 0 || row == NULL) return 0;
+  buf = (unsigned char*)malloc(total);
+  if (buf == NULL) return 0;
+  for (y = 0; y < height; ++y) {
+    memcpy(buf + y * row_bytes, row, row_bytes);
+    row += stride;
+  }
+  *out = buf;
+  *out_size = total;
+  return 1;
+}
+
 // Serializes 'buffer' in 'format' into a malloc'd byte array
 // ('*out'/'*out_size'). The libwebp imageio writers only support FILE*
 // output, so we go through a temporary file; this is portable across
@@ -283,14 +332,27 @@ int ldwebp_webp2Image(lua_State* L) {
     return luaL_error(L, "dwebp: failed to decode webp data");
   }
 
-  ok = dwebp_saveImage(&config.output, format, &buf, &buf_size);
+  if (dwebp_forcedBpp(format) > 0) {
+    // Forced colorspaces are returned as raw, tightly packed pixels plus
+    // their dimensions (the container formats below return a single string).
+    ok = dwebp_exportRaw(&config.output, format, &buf, &buf_size);
+    if (ok) {
+      lua_pushlstring(L, (const char*)buf, buf_size);
+      lua_pushinteger(L, config.output.width);
+      lua_pushinteger(L, config.output.height);
+    }
+  } else {
+    ok = dwebp_saveImage(&config.output, format, &buf, &buf_size);
+    if (ok) {
+      lua_pushlstring(L, (const char*)buf, buf_size);
+    }
+  }
+  free(buf);
   WebPFreeDecBuffer(&config.output);
   if (!ok) {
     return luaL_error(L, "dwebp: failed to write %s output", fmt);
   }
-  lua_pushlstring(L, (const char*)buf, buf_size);
-  free(buf);
-  return 1;
+  return ok ? (dwebp_forcedBpp(format) > 0 ? 3 : 1) : 0;
 }
 
 int ldwebp_path2Image(lua_State* L) {
@@ -336,12 +398,90 @@ int ldwebp_path2Image(lua_State* L) {
   }
   WebPFree((void*)data);
 
-  ok = dwebp_saveImage(&config.output, format, &buf, &buf_size);
+  if (dwebp_forcedBpp(format) > 0) {
+    // Forced colorspaces are returned as raw, tightly packed pixels plus
+    // their dimensions (the container formats below return a single string).
+    ok = dwebp_exportRaw(&config.output, format, &buf, &buf_size);
+    if (ok) {
+      lua_pushlstring(L, (const char*)buf, buf_size);
+      lua_pushinteger(L, config.output.width);
+      lua_pushinteger(L, config.output.height);
+    }
+  } else {
+    ok = dwebp_saveImage(&config.output, format, &buf, &buf_size);
+    if (ok) {
+      lua_pushlstring(L, (const char*)buf, buf_size);
+    }
+  }
+  free(buf);
   WebPFreeDecBuffer(&config.output);
   if (!ok) {
     return luaL_error(L, "dwebp: failed to write %s output", fmt);
   }
-  lua_pushlstring(L, (const char*)buf, buf_size);
-  free(buf);
+  return ok ? (dwebp_forcedBpp(format) > 0 ? 3 : 1) : 0;
+}
+
+// Pushes a features table from a populated WebPBitstreamFeatures.
+static void dwebp_pushFeatures(lua_State* L,
+                               const WebPBitstreamFeatures* const features) {
+  static const char* const kFormatNames[] = {
+    "undefined", "lossy", "lossless",
+  };
+  lua_createtable(L, 0, 5);
+  lua_pushinteger(L, features->width);
+  lua_setfield(L, -2, "width");
+  lua_pushinteger(L, features->height);
+  lua_setfield(L, -2, "height");
+  lua_pushboolean(L, features->has_alpha);
+  lua_setfield(L, -2, "has_alpha");
+  lua_pushboolean(L, features->has_animation);
+  lua_setfield(L, -2, "has_animation");
+  lua_pushstring(L, kFormatNames[features->format]);
+  lua_setfield(L, -2, "format");
+}
+
+int ldwebp_info(lua_State* L) {
+  WebPBitstreamFeatures features;
+  size_t data_size = 0;
+  const uint8_t* const data =
+      (const uint8_t*)luaL_checklstring(L, 2, &data_size);
+
+  luaL_checkudata(L, 1, "__dwebp__");
+  if (WebPGetFeatures(data, data_size, &features) != VP8_STATUS_OK) {
+    return luaL_error(L, "dwebp: invalid or corrupt webp data");
+  }
+  dwebp_pushFeatures(L, &features);
+  return 1;
+}
+
+int ldwebp_infoFromPath(lua_State* L) {
+  WebPBitstreamFeatures features;
+  const uint8_t* data = NULL;
+  size_t data_size = 0;
+  const char* const path = luaL_checkstring(L, 2);
+
+  luaL_checkudata(L, 1, "__dwebp__");
+  if (!ImgIoUtilReadFile(path, &data, &data_size)) {
+    return luaL_error(L, "dwebp: failed to load webp file '%s'", path);
+  }
+  if (WebPGetFeatures(data, data_size, &features) != VP8_STATUS_OK) {
+    WebPFree((void*)data);
+    return luaL_error(L, "dwebp: invalid webp file '%s'", path);
+  }
+  WebPFree((void*)data);
+  dwebp_pushFeatures(L, &features);
+  return 1;
+}
+
+int lwebp_version(lua_State* L) {
+  int version = WebPGetEncoderVersion();
+  lua_createtable(L, 0, 2);
+  lua_pushfstring(L, "%d.%d.%d", (version >> 16) & 0xff,
+                  (version >> 8) & 0xff, version & 0xff);
+  lua_setfield(L, -2, "encoder");
+  version = WebPGetDecoderVersion();
+  lua_pushfstring(L, "%d.%d.%d", (version >> 16) & 0xff,
+                  (version >> 8) & 0xff, version & 0xff);
+  lua_setfield(L, -2, "decoder");
   return 1;
 }

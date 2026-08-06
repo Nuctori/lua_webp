@@ -28,10 +28,12 @@ LUAMOD_API int luaopen_lua_webp(lua_State* L) {
   lua_webp_register(L, "__dwebp__", (const luaL_Reg[]){
     {"webp2Image", ldwebp_webp2Image},
     {"path2Image", ldwebp_path2Image},
+    {"info", ldwebp_info},
+    {"infoFromPath", ldwebp_infoFromPath},
     {NULL, NULL},
   });
 
-  lua_createtable(L, 0, 2);
+  lua_createtable(L, 0, 3);
   lua_newuserdata(L, 1);
   luaL_setmetatable(L, "__cwebp__");
   lua_setfield(L, -2, "cwebp");
@@ -39,5 +41,8 @@ LUAMOD_API int luaopen_lua_webp(lua_State* L) {
   lua_newuserdata(L, 1);
   luaL_setmetatable(L, "__dwebp__");
   lua_setfield(L, -2, "dwebp");
+
+  lua_pushcfunction(L, lwebp_version);
+  lua_setfield(L, -2, "version");
   return 1;
 }

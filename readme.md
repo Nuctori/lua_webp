@@ -100,19 +100,28 @@ io.open("webp2ppm2.ppm", "wb"):write(ppm):close()
 `cwebp:image2Webp(data, config?)` → webp string
 `dwebp:path2Image(path, format, options?)` → image string
 `dwebp:webp2Image(data, format, options?)` → image string
+`dwebp:info(data)` → `{ width, height, has_alpha, has_animation, format }`
+`dwebp:infoFromPath(path)` → same info table
+`webp.version()` → `{ encoder, decoder }` version strings
 
 - `config` maps directly onto `WebPConfig` (`quality`, `lossless`, `method`,
   `target_size`, `alpha_quality`, `near_lossless`, `exact`, `use_sharp_yuv`,
   ...; see `src/webp/encode.h`). `image_hint` accepts `"photo"`, `"picture"`,
   `"graph"` or a raw `WEBP_HINT_*` integer. Unknown fields and out-of-range
   values raise a Lua error.
-- `format` is one of `png`, `ppm`, `pam`, `bmp`, `tiff`, `pgm`, `yuv`,
-  `yuva`, `alpha`, or a forced colorspace: `RGB`, `RGBA`, `BGR`, `BGRA`,
-  `ARGB`, `RGBA_4444`, `RGB_565`, `rgbA`, `bgrA`, `Argb`, `rgbA_4444`.
+- `format` is one of:
+  - container formats (single string result): `png`, `ppm`, `pam`, `bmp`,
+    `tiff`, `pgm`, `yuv`, `yuva`, `alpha`
+  - forced colorspaces, returned as **raw, tightly packed pixel bytes** plus
+    their dimensions — `bytes, width, height = dwebp:webp2Image(data, "RGBA")`:
+    `RGB`/`BGR` (3 bytes/px), `RGBA`/`BGRA`/`ARGB`/`rgbA`/`bgrA`/`Argb`
+    (4 bytes/px), `RGBA_4444`/`RGB_565`/`rgbA_4444` (2 bytes/px)
 - `options` maps onto `WebPDecoderOptions` (`use_threads`, `use_cropping` +
   `crop_*`, `use_scaling` + `scaled_*`, `flip`, `dithering_strength`, ...).
 
-All failures raise Lua errors with descriptive messages.
+All failures raise Lua errors with descriptive messages. Animated WebP files
+are not supported (only the first frame is decoded); `info()` reports
+`has_animation` so callers can detect them.
 
 ## Installation
 

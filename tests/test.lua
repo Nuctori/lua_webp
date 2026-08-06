@@ -125,20 +125,31 @@ assert_eq(pw, 16, "png width")
 assert_eq(ph, 16, "png height")
 assert_eq(pct, 6, "png color type must be RGBA (6)")
 
--- Forced colorspaces: "RGB" is dumped as raw PPM (alpha dropped),
--- "RGBA" is saved as PNG like the dwebp reference tool.
-local rgb_ppm = dwebp:webp2Image(webp_data, "RGB")
-local rgb_hdr = rgb_ppm:find("\n255\n", 1, true)
-assert(rgb_hdr, "RGB format must produce a ppm")
-assert(rgb_ppm:match("P6\n16 16\n255\n"), "RGB ppm header")
-assert_eq(#rgb_ppm - (rgb_hdr + 4), 16 * 16 * 3, "RGB ppm pixel count")
+-- Forced colorspaces are exported as raw, tightly packed pixel bytes
+-- plus their dimensions: RGB drops alpha (3 bytes/px), RGBA keeps it.
+local rgb, rw, rh = dwebp:webp2Image(webp_data, "RGB")
+assert_eq(rw, 16, "RGB raw width")
+assert_eq(rh, 16, "RGB raw height")
+assert_eq(#rgb, 16 * 16 * 3, "RGB raw byte count")
+assert_eq(rgb:byte(1), 3, "RGB first pixel R")
+assert_eq(rgb:byte(2), 7, "RGB first pixel G")
+assert_eq(rgb:byte(3), 40, "RGB first pixel B")
 
-local rgba_png = dwebp:webp2Image(webp_data, "RGBA")
-assert(is_png(rgba_png), "RGBA format must produce a png")
-local arw, arh, arct = png_ihdr(rgba_png)
-assert_eq(arw, 16, "RGBA png width")
-assert_eq(arh, 16, "RGBA png height")
-assert_eq(arct, 6, "RGBA png color type")
+local rgba, arw, arh = dwebp:webp2Image(webp_data, "RGBA")
+assert_eq(arw, 16, "RGBA raw width")
+assert_eq(arh, 16, "RGBA raw height")
+assert_eq(#rgba, 16 * 16 * 4, "RGBA raw byte count")
+-- fixture alpha: A = ((x+y)%3 == 0) and 128 or 255
+assert_eq(rgba:byte(4), 128, "RGBA first pixel alpha")
+assert_eq(rgba:byte(4 + 4 + 4 + 4 + 4), 255, "RGBA second pixel alpha")
+
+local bgr = dwebp:webp2Image(webp_data, "BGR")
+assert_eq(#bgr, 16 * 16 * 3, "BGR raw byte count")
+assert_eq(bgr:byte(1), 40, "BGR first pixel B")
+assert_eq(bgr:byte(3), 3, "BGR first pixel R")
+
+local rgb565 = dwebp:webp2Image(webp_data, "RGB_565")
+assert_eq(#rgb565, 16 * 16 * 2, "RGB_565 raw byte count")
 
 -- path2Image matches webp2Image
 local png_from_path = dwebp:path2Image("tests/fixture.webp", "png")
@@ -178,6 +189,31 @@ assert(is_png(threaded), "use_threads must not break output")
 assert(is_png(dwebp:webp2Image(q10, "png")), "lossy webp must decode to png")
 
 -- ---------------------------------------------------------------------------
+-- Info and version
+-- ---------------------------------------------------------------------------
+
+local info = dwebp:info(webp_data)
+assert_eq(type(info), "table", "info must return a table")
+assert_eq(info.width, 16, "info width")
+assert_eq(info.height, 16, "info height")
+assert_eq(info.has_alpha, true, "info has_alpha")
+assert_eq(info.format, "lossless", "info format")
+
+local info2 = dwebp:infoFromPath("tests/fixture.webp")
+assert_eq(info2.width, 16, "infoFromPath width")
+assert_eq(info2.height, 16, "infoFromPath height")
+assert_eq(info2.format, "lossless", "infoFromPath format")
+
+local lossy_info = dwebp:info(q10)
+assert_eq(lossy_info.format, "lossy", "lossy info format")
+assert_eq(lossy_info.has_alpha, false, "lossy jpeg has no alpha")
+
+local v = webp.version()
+assert_eq(type(v), "table", "version must return a table")
+assert(v.encoder:match("^%d+%.%d+%.%d+$"), "encoder version string")
+assert(v.decoder:match("^%d+%.%d+%.%d+$"), "decoder version string")
+
+-- ---------------------------------------------------------------------------
 -- Error handling
 -- ---------------------------------------------------------------------------
 
@@ -204,6 +240,10 @@ assert_error("unknown option", function()
 end)
 assert_error("failed to load", function()
   dwebp:path2Image("tests/does-not-exist.webp", "png")
+end)
+assert_error("corrupt", function() dwebp:info("not webp data") end)
+assert_error("failed to load", function()
+  dwebp:infoFromPath("tests/does-not-exist.webp")
 end)
 
 print("lua_webp tests passed")
