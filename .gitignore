@@ -12,3 +12,6 @@ third_party/libwebp/build/
 # Fixture generator binary
 tools/gen_fixtures
 tools/gen_fixtures.exe
+
+# Subagent working directories
+.pi-subagents/

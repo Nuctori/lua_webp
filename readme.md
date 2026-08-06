@@ -19,9 +19,11 @@ repo is enough to build the module.
 - Lua 5.3 or newer
 - `pkg-config`
 - System development packages, found via `pkg-config`:
-  - `libwebp` + `libwebpdemux`
+  - `libwebp` **>= 1.3.0** + `libwebpdemux` (an older system libwebp, e.g.
+    Ubuntu 22.04's 1.2.x, is detected and the vendored build is used instead)
   - `libpng`, `libjpeg`, `libtiff` (for the PNG/JPEG/TIFF input readers)
-  - `cmake` (only when no system libwebp is available — the vendored fallback)
+  - `cmake` (only when no suitable system libwebp is available — the
+    vendored fallback)
 
 Install examples:
 

@@ -57,6 +57,8 @@ jobs:
           brew install pkgconf lua@5.4 webp libpng jpeg-turbo libtiff
           LUA_PREFIX="$(brew --prefix lua@5.4)"
           echo "PKG_CONFIG_PATH=$LUA_PREFIX/lib/pkgconfig" >> "$GITHUB_ENV"
+          # lua@5.4 is keg-only; use the full path (bare lua5.4 is not on PATH)
+          echo "LUA_BIN=$LUA_PREFIX/bin/lua5.4" >> "$GITHUB_ENV"
 
       - name: Set up MSYS2
         if: runner.os == 'Windows'

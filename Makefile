@@ -24,22 +24,28 @@ LDFLAGS += $(shell $(PKG_CONFIG) --libs $(LUA_PKG) 2>/dev/null)
 LIBS ?= -lm
 
 # ---------------------------------------------------------------------------
-# libwebp: system install first, vendored CMake build as fallback
+# libwebp: system install first, vendored CMake build as fallback.
+# The module uses WebPConfig/WebPDecoderOptions fields added after libwebp
+# 1.2 (e.g. flip, qmin/qmax), so a system libwebp must be recent enough;
+# older installs automatically fall back to the vendored source tree
+# (third_party/libwebp, v1.4.0) built with CMake.
 # ---------------------------------------------------------------------------
 WEBP_PC ?= libwebp
+WEBP_MIN_VERSION ?= 1.3.0
+WEBP_AVAILABLE := $(shell $(PKG_CONFIG) --atleast-version=$(WEBP_MIN_VERSION) \
+  $(WEBP_PC) && echo yes)
+
+ifeq ($(WEBP_AVAILABLE),yes)
 WEBP_CFLAGS := $(shell $(PKG_CONFIG) --cflags $(WEBP_PC) 2>/dev/null)
 WEBP_LIBS := $(shell $(PKG_CONFIG) --libs $(WEBP_PC) 2>/dev/null) \
              $(shell $(PKG_CONFIG) --libs libwebpdemux 2>/dev/null)
-
-# The presence of the main libwebp pc file decides between a system build and
-# the vendored CMake fallback (a stray libwebpdemux.pc must not count).
-ifeq ($(strip $(WEBP_CFLAGS)),)
+else
 WEBP_BUILD_DIR := third_party/libwebp/build
 WEBP_CFLAGS := -Ithird_party/libwebp/src
 WEBP_LIBS := -L$(WEBP_BUILD_DIR) -lwebp -lwebpdemux
 WEBP_TARGETS := $(WEBP_BUILD_DIR)/.built
-$(info NOTE: system libwebp not found via pkg-config; building the vendored \
-libwebp (third_party/libwebp) with CMake)
+$(info NOTE: system libwebp not found or older than $(WEBP_MIN_VERSION); \
+building the vendored libwebp (third_party/libwebp) with CMake)
 
 $(WEBP_BUILD_DIR)/.built:
 	mkdir -p $(WEBP_BUILD_DIR)
@@ -54,8 +60,6 @@ $(WEBP_BUILD_DIR)/.built:
 	# --build works with any generator (Makefiles or Ninja).
 	cmake --build $(WEBP_BUILD_DIR) --target webp webpdemux
 	touch $@
-else
-WEBP_TARGETS :=
 endif
 
 # ---------------------------------------------------------------------------
@@ -141,11 +145,12 @@ $(TARGET): $(MODULE_SOURCES) lua_webp.h $(IMAGEIO_SOURCES) $(WEBP_TARGETS)
 test: build
 	$(LUA_BIN) tests/test.lua
 
-# Regenerates the committed test fixtures (tests/fixture.{png,webp}).
-fixtures: tools/gen_fixtures
+# Regenerates the committed test fixtures (tests/fixture.{png,webp,jpg}).
+fixtures: tools/gen_fixtures $(WEBP_TARGETS)
+	cp logo.jpg tests/fixture.jpg
 	./tools/gen_fixtures
 
-tools/gen_fixtures: tools/gen_fixtures.c
+tools/gen_fixtures: tools/gen_fixtures.c $(WEBP_TARGETS)
 	$(CC) $(CFLAGS) $(WEBP_CFLAGS) $(PNG_CFLAGS) -Ithird_party/libwebp \
 	  -o $@ $< $(LDFLAGS) $(WEBP_LIBS) $(PNG_LIBS) $(LIBS)
 

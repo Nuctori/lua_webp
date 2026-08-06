@@ -262,21 +262,25 @@ static void dwebp_loadWebpDecConf(lua_State* L, int index,
   luaL_checktype(L, index, LUA_TTABLE);
   lua_pushnil(L);
   while (lua_next(L, index) != 0) {
+    const dwebp_opt_field* field = NULL;
     const char* name;
     if (lua_type(L, -2) != LUA_TSTRING) {
       luaL_error(L, "dwebp: options table keys must be strings");
     }
     name = lua_tostring(L, -2);
     for (i = 0; i < kNum; ++i) {
-      if (strcmp(dwebp_int_options[i].name, name) == 0) break;
+      if (strcmp(dwebp_int_options[i].name, name) == 0) {
+        field = &dwebp_int_options[i];
+        break;
+      }
     }
-    if (i == kNum) {
+    if (field == NULL) {
       luaL_error(L, "dwebp: unknown option '%s'", name);
     }
     if (!lua_isnumber(L, -1)) {
-      luaL_error(L, "dwebp: option '%s' must be a number", name);
+      luaL_error(L, "dwebp: option '%s' must be numeric", name);
     }
-    *(int*)((char*)&config->options + dwebp_int_options[i].offset) =
+    *(int*)((char*)&config->options + field->offset) =
         (int)lua_tointeger(L, -1);
     lua_pop(L, 1);
   }
@@ -352,7 +356,7 @@ int ldwebp_webp2Image(lua_State* L) {
   if (!ok) {
     return luaL_error(L, "dwebp: failed to write %s output", fmt);
   }
-  return ok ? (dwebp_forcedBpp(format) > 0 ? 3 : 1) : 0;
+  return dwebp_forcedBpp(format) > 0 ? 3 : 1;
 }
 
 int ldwebp_path2Image(lua_State* L) {
@@ -384,6 +388,7 @@ int ldwebp_path2Image(lua_State* L) {
   }
   if (WebPGetFeatures(data, data_size, bitstream) != VP8_STATUS_OK) {
     WebPFree((void*)data);
+    WebPFreeDecBuffer(&config.output);
     return luaL_error(L, "dwebp: invalid webp file '%s'", path);
   }
   if (!dwebp_setColorspace(&config.output, bitstream, format)) {
@@ -418,7 +423,7 @@ int ldwebp_path2Image(lua_State* L) {
   if (!ok) {
     return luaL_error(L, "dwebp: failed to write %s output", fmt);
   }
-  return ok ? (dwebp_forcedBpp(format) > 0 ? 3 : 1) : 0;
+  return dwebp_forcedBpp(format) > 0 ? 3 : 1;
 }
 
 // Pushes a features table from a populated WebPBitstreamFeatures.
@@ -427,6 +432,8 @@ static void dwebp_pushFeatures(lua_State* L,
   static const char* const kFormatNames[] = {
     "undefined", "lossy", "lossless",
   };
+  const int format =
+      (features->format >= 0 && features->format <= 2) ? features->format : 0;
   lua_createtable(L, 0, 5);
   lua_pushinteger(L, features->width);
   lua_setfield(L, -2, "width");
@@ -436,7 +443,7 @@ static void dwebp_pushFeatures(lua_State* L,
   lua_setfield(L, -2, "has_alpha");
   lua_pushboolean(L, features->has_animation);
   lua_setfield(L, -2, "has_animation");
-  lua_pushstring(L, kFormatNames[features->format]);
+  lua_pushstring(L, kFormatNames[format]);
   lua_setfield(L, -2, "format");
 }
 

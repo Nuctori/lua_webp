@@ -182,6 +182,30 @@ local scaled = dwebp:webp2Image(webp_data, "ppm", {
 })
 assert(scaled:match("P6\n32 32\n255\n"), "scale must produce a 32x32 ppm")
 
+-- flip moves the last source row to the first output row (G = y*16+7)
+local flipped = dwebp:webp2Image(webp_data, "ppm", { flip = 1 })
+local fh = flipped:find("\n255\n", 1, true)
+assert(fh, "flip ppm header")
+assert_eq(flipped:sub(fh + 5):byte(2), 15 * 16 + 7, "flip first row G")
+
+-- alpha plane output (ALPHA_PLANE_ONLY): PGM header + raw alpha bytes
+local alpha = dwebp:webp2Image(webp_data, "alpha")
+assert(alpha:match("^P5\n"), "alpha plane pgm magic")
+local ah = alpha:find("\n255\n", 1, true)
+assert_eq(#alpha - (ah + 4), 16 * 16, "alpha plane byte count")
+assert_eq(alpha:byte(ah + 5), 128, "first pixel alpha (x+y=0)")
+assert_eq(alpha:byte(ah + 6), 255, "second pixel alpha (x+y=1)")
+
+-- RGB_565 packed value for fixture pixel (0,0): R=3,G=7,B=40
+-- -> R5=(3>>3)=0, G6=(7>>2)=1, B5=(40>>3)=5 => 16-bit value 37.
+-- The byte order depends on libwebp's WEBP_SWAP_16BIT_CSP build option
+-- (OFF on Linux/vendored, ON on some MSYS2 builds), so accept either.
+local rgb565_px = dwebp:webp2Image(webp_data, "RGB_565")
+assert_eq(#rgb565_px, 16 * 16 * 2, "RGB_565 raw byte count")
+local lo, hi = rgb565_px:byte(1), rgb565_px:byte(2)
+assert((lo == 37 and hi == 0) or (lo == 0 and hi == 37),
+       "RGB_565 first pixel must pack value 37")
+
 local threaded = dwebp:webp2Image(webp_data, "png", { use_threads = 1 })
 assert(is_png(threaded), "use_threads must not break output")
 
@@ -223,7 +247,7 @@ assert_error("bad argument", function() cwebp:image2Webp(png_data, "not-a-table"
 assert_error("unknown config field", function()
   cwebp:image2Webp(png_data, { bogus_field = 1 })
 end)
-assert_error("must be a number", function()
+assert_error("must be numeric", function()
   cwebp:image2Webp(png_data, { quality = "high" })
 end)
 assert_error("invalid WebP configuration", function()

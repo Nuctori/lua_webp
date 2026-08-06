@@ -91,22 +91,28 @@ static void cwebp_loadWebpConf(lua_State* L, int index, WebPConfig* config) {
 
     fi = cwebp_find_field(cwebp_int_fields, kNumInt, name);
     if (fi >= 0) {
+      int value;
       if (!lua_isnumber(L, -1)) {
-        luaL_error(L, "cwebp: config field '%s' must be a number", name);
+        luaL_error(L, "cwebp: config field '%s' must be numeric", name);
       }
-      *(int*)((char*)config + cwebp_int_fields[fi].offset) =
-          (int)lua_tointeger(L, -1);
+      // memcpy avoids strict-aliasing concerns of casting through char*.
+      value = (int)lua_tointeger(L, -1);
+      memcpy((char*)config + cwebp_int_fields[fi].offset, &value,
+             sizeof(value));
       lua_pop(L, 1);
       continue;
     }
 
     fi = cwebp_find_field(cwebp_float_fields, kNumFloat, name);
     if (fi >= 0) {
+      float value;
       if (!lua_isnumber(L, -1)) {
-        luaL_error(L, "cwebp: config field '%s' must be a number", name);
+        luaL_error(L, "cwebp: config field '%s' must be numeric", name);
       }
-      *(float*)((char*)config + cwebp_float_fields[fi].offset) =
-          (float)lua_tonumber(L, -1);
+      // memcpy avoids strict-aliasing concerns of casting through char*.
+      value = (float)lua_tonumber(L, -1);
+      memcpy((char*)config + cwebp_float_fields[fi].offset, &value,
+             sizeof(value));
       lua_pop(L, 1);
       continue;
     }
