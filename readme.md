@@ -1,62 +1,138 @@
 # lua_webp
 
-lua_webp is a Lua module for performing WebP image format conversion in Lua. It provides cwebp and dwebp functions for converting images to WebP format and converting WebP images to other formats.
+`lua_webp` is a Lua C extension for WebP image conversion. It exposes
+`cwebp`- and `dwebp`-style entry points:
 
-## Installation
+- **cwebp** — compress PNG, JPEG, TIFF, WebP and PNM images into WebP
+- **dwebp** — decompress WebP into PNG, PPM, PAM, BMP, TIFF, PGM, YUV and raw
+  pixel formats
 
-Import the lua_webp module into your Lua project. You can obtain the latest version of the module file from the project's GitHub repository.
+The module is built on the [libwebp](https://github.com/webmproject/libwebp)
+public API plus the libwebp `imageio` glue (vendored under
+`third_party/libwebp`, libwebp v1.4.0). When a system libwebp is not found via
+`pkg-config`, the vendored source tree is built with CMake, so a clone of this
+repo is enough to build the module.
+
+## Requirements
+
+- A C99 compiler
+- Lua 5.3 or newer
+- `pkg-config`
+- System development packages, found via `pkg-config`:
+  - `libwebp` + `libwebpdemux`
+  - `libpng`, `libjpeg`, `libtiff` (for the PNG/JPEG/TIFF input readers)
+  - `cmake` (only when no system libwebp is available — the vendored fallback)
+
+Install examples:
+
+```sh
+# Debian / Ubuntu
+sudo apt-get install build-essential pkg-config lua5.4 liblua5.4-dev \
+  libwebp-dev libpng-dev libjpeg-dev libtiff-dev
+
+# macOS (Homebrew)
+brew install pkgconf lua@5.4 webp libpng jpeg-turbo libtiff
+
+# Windows (MSYS2 / UCRT64)
+pacman -S mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-make \
+  mingw-w64-ucrt-x86_64-pkgconf mingw-w64-ucrt-x86_64-lua54 \
+  mingw-w64-ucrt-x86_64-libwebp mingw-w64-ucrt-x86_64-libpng \
+  mingw-w64-ucrt-x86_64-libjpeg-turbo mingw-w64-ucrt-x86_64-libtiff
+```
+
+## Build
+
+```bash
+make build
+```
+
+You can choose the Lua version at build time:
+
+```bash
+make LUA_VERSION=5.3 build
+make LUA_VERSION=5.4 build
+```
+
+## Test
+
+```bash
+make test
+```
+
+The test suite (`tests/test.lua`) covers module loading, file and memory
+encoding, lossless pixel-exact round-trips (PPM/PAM), PNG/BMP/TIFF/YUV
+decoding, encoder quality and decoder options (crop, scale, threads), and
+error handling. Fixtures are committed under `tests/` and can be regenerated
+with `make fixtures`.
 
 ## Usage
 
-Here's an example of using the lua_webp module for image format conversion:
-
 ```lua
--- Import the lua_webp module
 local webp = require "lua_webp"
-
--- Get the cwebp and dwebp functions
 local cwebp = webp.cwebp
 local dwebp = webp.dwebp
 
--- Convert images to WebP format
-
--- Use the cwebp function to write the output of the path2Webp function to the test.webp file
-local outWebp = cwebp:path2Webp("test.jpg", {
-    quality = 10
-})
-local file = io.open("test.webp", "w")
+-- Encode a file to WebP (full encoder configuration is optional)
+local outWebp = cwebp:path2Webp("test.jpg", { quality = 75, method = 4 })
+local file = io.open("test.webp", "wb")
 file:write(outWebp)
+file:close()
 
--- Read the contents of the test.jpg file
-local file2 = io.open("test.jpg", "r")
-local jpgData = file2:read("*a") 
+-- Encode image bytes to WebP
+local f = io.open("test.jpg", "rb")
+local jpgData = f:read("*a")
+f:close()
+local outWebp2 = cwebp:image2Webp(jpgData, { lossless = 1 })
+io.open("test2.webp", "wb"):write(outWebp2):close()
 
--- Use the cwebp function to convert the image data to WebP format and write the result to the test2.webp file
-local outWebp2 = cwebp:image2Webp(jpgData, { quality = 10 })
-local file3 = io.open("test2.webp", "w")
-file3:write(outWebp2)
+-- Decode a WebP file to PNG (decoder options are optional)
+local png = dwebp:path2Image("test.webp", "png", { use_threads = 1 })
+io.open("webp2png1.png", "wb"):write(png):close()
 
--- Convert WebP images to other formats
-
--- Use the dwebp function to convert the test.webp file to the PNG format and write the result to the webp2png1.png file
-local r = dwebp:path2Image("test.webp", "png", {
-    use_threads = 1
-})
-local file4 = io.open("webp2png1.png", "w")
-file4:write(r)
-
--- Use the dwebp function to convert the WebP image data in the outWebp2 variable to the PNG format and write the result to the webp2png2.png file
-local r = dwebp:webp2Image(outWebp2, "png", {})
-local file5 = io.open("webp2png2.png", "w")
-file5:write(r)
+-- Decode WebP bytes to PPM
+local ppm = dwebp:webp2Image(outWebp2, "ppm", {})
+io.open("webp2ppm2.ppm", "wb"):write(ppm):close()
 ```
 
-Note that you can customize the conversion parameters such as quality settings according to your needs.
+### API
 
-## Contributing
+`cwebp:path2Webp(path, config?)` → webp string
+`cwebp:image2Webp(data, config?)` → webp string
+`dwebp:path2Image(path, format, options?)` → image string
+`dwebp:webp2Image(data, format, options?)` → image string
 
-Contributions to this project are welcome! If you encounter any issues or have suggestions for improvements, please submit issues or pull requests.
+- `config` maps directly onto `WebPConfig` (`quality`, `lossless`, `method`,
+  `target_size`, `alpha_quality`, `near_lossless`, `exact`, `use_sharp_yuv`,
+  ...; see `src/webp/encode.h`). `image_hint` accepts `"photo"`, `"picture"`,
+  `"graph"` or a raw `WEBP_HINT_*` integer. Unknown fields and out-of-range
+  values raise a Lua error.
+- `format` is one of `png`, `ppm`, `pam`, `bmp`, `tiff`, `pgm`, `yuv`,
+  `yuva`, `alpha`, or a forced colorspace: `RGB`, `RGBA`, `BGR`, `BGRA`,
+  `ARGB`, `RGBA_4444`, `RGB_565`, `rgbA`, `bgrA`, `Argb`, `rgbA_4444`.
+- `options` maps onto `WebPDecoderOptions` (`use_threads`, `use_cropping` +
+  `crop_*`, `use_scaling` + `scaled_*`, `flip`, `dithering_strength`, ...).
+
+All failures raise Lua errors with descriptive messages.
+
+## Installation
+
+The simplest path is a source build:
+
+```bash
+make build
+```
+
+With LuaRocks:
+
+```bash
+luarocks make lua-webp-scm-1.rockspec
+```
+
+Tagged GitHub releases publish prebuilt module artifacts for Linux, macOS and
+Windows (see the `release` workflow); drop the matching asset next to your
+Lua package path.
 
 ## License
 
-This project is distributed under the MIT License. For more information, see the [LICENSE](LICENSE) file.
+MIT. See [LICENSE](LICENSE). The vendored libwebp tree is BSD-licensed
+(see `third_party/libwebp/COPYING` and `third_party/libwebp/PATENTS`).

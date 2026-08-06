@@ -1,0 +1,14 @@
+# Build artifacts
+*.o
+*.so
+*.dll
+*.dylib
+lua_webp.so
+lua_webp.dll
+
+# Vendored libwebp build output
+third_party/libwebp/build/
+
+# Fixture generator binary
+tools/gen_fixtures
+tools/gen_fixtures.exe

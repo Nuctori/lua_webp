@@ -1,0 +1,17 @@
+# clangd configuration for IDE/editor diagnostics.
+# The real build uses pkg-config flags (see Makefile); these paths cover the
+# common local setup so clangd can resolve lua.h / webp / libpng headers
+# without overriding the standard C headers (which clangd resolves from its
+# own bundled include directory).
+CompileFlags:
+  Add:
+    - "-std=c99"
+    - "-I."
+    - "-Ithird_party/libwebp"
+    - "-Ithird_party/libwebp/src"
+    - "-IC:/msys64/ucrt64/include/lua5.4"
+    - "-IC:/msys64/ucrt64/include/webp"
+    - "-IC:/msys64/ucrt64/include/libpng16"
+Index:
+  Exclude:
+    - third_party

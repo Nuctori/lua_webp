@@ -1,0 +1,94 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        lua_version: ["5.3", "5.4"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config \
+            lua${{ matrix.lua_version }} liblua${{ matrix.lua_version }}-dev \
+            libwebp-dev libpng-dev libjpeg-dev libtiff-dev
+
+      - name: Build
+        run: >-
+          make LUA_VERSION=${{ matrix.lua_version }}
+          LUA_BIN=lua${{ matrix.lua_version }}
+          CFLAGS='-O2 -std=c99 -Wall -Wextra -Werror' build
+
+      - name: Test
+        run: >-
+          make LUA_VERSION=${{ matrix.lua_version }}
+          LUA_BIN=lua${{ matrix.lua_version }}
+          CFLAGS='-O2 -std=c99 -Wall -Wextra -Werror' test
+
+  macos:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          brew install pkgconf lua@5.4 webp libpng jpeg-turbo libtiff
+          LUA_PREFIX="$(brew --prefix lua@5.4)"
+          echo "PKG_CONFIG_PATH=$LUA_PREFIX/lib/pkgconfig" >> "$GITHUB_ENV"
+          echo "LUA_BIN=$LUA_PREFIX/bin/lua5.4" >> "$GITHUB_ENV"
+
+      - name: Build
+        run: >-
+          make LUA_VERSION=5.4 LUA_BIN="$LUA_BIN"
+          CFLAGS='-O2 -std=c99 -Wall -Wextra -Werror' build
+
+      - name: Test
+        run: >-
+          make LUA_VERSION=5.4 LUA_BIN="$LUA_BIN"
+          CFLAGS='-O2 -std=c99 -Wall -Wextra -Werror' test
+
+  windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-make
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-lua54
+            mingw-w64-ucrt-x86_64-libwebp
+            mingw-w64-ucrt-x86_64-libpng
+            mingw-w64-ucrt-x86_64-libjpeg-turbo
+            mingw-w64-ucrt-x86_64-libtiff
+
+      - name: Build
+        shell: msys2 {0}
+        run: >-
+          mingw32-make LUA_VERSION=5.4 LUA_BIN=lua5.4
+          CFLAGS='-O2 -std=c99 -Wall -Wextra -Werror' build
+
+      - name: Test
+        shell: msys2 {0}
+        run: >-
+          mingw32-make LUA_VERSION=5.4 LUA_BIN=lua5.4
+          CFLAGS='-O2 -std=c99 -Wall -Wextra -Werror' test

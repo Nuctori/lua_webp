@@ -1,199 +1,218 @@
-#include <stdio.h>
 #include "lua_webp.h"
 
+#include <stddef.h>
+#include <string.h>
 
-static int ReadImage(const char filename[], WebPPicture* const pic) {
+// Reads an image file (PNG/JPEG/TIFF/WebP/PNM) into 'pic'. Adapted from
+// libwebp's examples/cwebp.c, minus the Windows WIC fast path.
+static int cwebp_ReadImage(const char filename[], WebPPicture* const pic) {
   const uint8_t* data = NULL;
   size_t data_size = 0;
-  WebPImageReader reader;
   int ok;
-#ifdef HAVE_WINCODEC_H
-  // Try to decode the file using WIC falling back to the other readers for
-  // e.g., WebP.
-  ok = ReadPictureWithWIC(filename, pic, 1, NULL);
-  if (ok) return 1;
-#endif
   if (!ImgIoUtilReadFile(filename, &data, &data_size)) return 0;
-  reader = WebPGuessImageReader(data, data_size);
-  ok = reader(data, data_size, pic, 1, NULL);
+  ok = WebPGuessImageReader(data, data_size)(data, data_size, pic, 1, NULL);
   WebPFree((void*)data);
   return ok;
 }
 
+// ---------------------------------------------------------------------------
+// WebPConfig table mapping
+// ---------------------------------------------------------------------------
 
-// 这不是用来暴露的
-inline static int cwebp_loadWebpConf(lua_State* L, WebPConfig* config) {
-    // 检查参数有效性
-    if (!L || !config)
-        return 0;
-    // 将表的字段名和字段值依次入栈
-    lua_pushnil(L);  // 将nil入栈，用于遍历表
-    while (lua_next(L, -2) != 0) {
-        // 检查字段名类型是否为字符串
-        if (lua_type(L, -2) != LUA_TSTRING) {
-            printf("Invalid table key type\n");
-            lua_pop(L, 2);  // 弹出键值对
-            return 0;
-        }
+typedef struct {
+  const char* name;
+  size_t offset;   // offsetof(WebPConfig, field)
+} cwebp_config_field;
 
-        // 获取字段名和字段值
-        const char* fieldName = lua_tostring(L, -2);
-        int fieldType = lua_type(L, -1);
+#define CONFIG_FIELD(field) { #field, offsetof(WebPConfig, field) }
 
-        // 根据字段名设置相应的字段值
-        if (strcmp(fieldName, "method") == 0 && fieldType == LUA_TNUMBER) {
-            config->method = lua_tointeger(L, -1);
-        } else if (strcmp(fieldName, "quality") == 0 && fieldType == LUA_TNUMBER) {
-            config->quality = (float)lua_tonumber(L, -1);
-        }
-        else if (strcmp(fieldName, "method") == 0 && fieldType == LUA_TNUMBER) {
-            config->method = lua_tointeger(L, -1);
-        }
-        else if (strcmp(fieldName, "target_size") == 0 && fieldType == LUA_TNUMBER) {
-            config->target_size = lua_tointeger(L, -1);
-        }
-        else if (strcmp(fieldName, "target_PSNR") == 0 && fieldType == LUA_TNUMBER) {
-            config->target_PSNR = (float)lua_tonumber(L, -1);
-        }
-        else if (strcmp(fieldName, "segments") == 0 && fieldType == LUA_TNUMBER) {
-            config->segments = lua_tointeger(L, -1);
-        }
-        else if (strcmp(fieldName, "sns_strength") == 0 && fieldType == LUA_TNUMBER) {
-            config->sns_strength = lua_tointeger(L, -1);
-        }
-        else if (strcmp(fieldName, "filter_strength") == 0 && fieldType == LUA_TNUMBER) {
-            config->filter_strength = lua_tointeger(L, -1);
-        }
-        else if (strcmp(fieldName, "filter_sharpness") == 0 && fieldType == LUA_TNUMBER) {
-            config->filter_sharpness = lua_tointeger(L, -1);
-        }
-        else if (strcmp(fieldName, "filter_type") == 0 && fieldType == LUA_TNUMBER) {
-            config->filter_type = lua_tointeger(L, -1);
-        }
-        else if (strcmp(fieldName, "autofilter") == 0 && fieldType == LUA_TNUMBER) {
-            config->autofilter = lua_tointeger(L, -1);
-        }
-        else if (strcmp(fieldName, "alpha_compression") == 0 && fieldType == LUA_TNUMBER) {
-            config->alpha_compression = lua_tointeger(L, -1);
-        }
-        else if (strcmp(fieldName, "alpha_quality") == 0 && fieldType == LUA_TNUMBER) {
-            config->alpha_quality = lua_tointeger(L, -1);
-        }
-        else if (strcmp(fieldName, "pass") == 0 && fieldType == LUA_TNUMBER) {
-            config->pass = lua_tointeger(L, -1);
-        }
-        else if (strcmp(fieldName, "show_compressed") == 0 && fieldType == LUA_TNUMBER) {
-            config->show_compressed = lua_tointeger(L, -1);
-        }
-        else if (strcmp(fieldName, "partitions") == 0 && fieldType == LUA_TNUMBER) {
-            config->partitions = lua_tointeger(L, -1);
-        }
-        else if (strcmp(fieldName, "emulate_jpeg_size") == 0 && fieldType == LUA_TNUMBER) {
-            config->emulate_jpeg_size = lua_tointeger(L, -1);
-        }
-        else if (strcmp(fieldName, "thread_level") == 0 && fieldType == LUA_TNUMBER) {
-            config->thread_level = lua_tointeger(L, -1);
-        }
-        else if (strcmp(fieldName, "low_memory") == 0 && fieldType == LUA_TNUMBER) {
-            config->low_memory = lua_tointeger(L, -1);
-        }
-        else if (strcmp(fieldName, "near_lossless") == 0 && fieldType == LUA_TNUMBER) {
-            config->near_lossless = lua_tointeger(L, -1);
-        }
-        else if (strcmp(fieldName, "exact") == 0 && fieldType == LUA_TNUMBER) {
-            config->exact = lua_tointeger(L, -1);
-        }
-        else if (strcmp(fieldName, "use_delta_palette") == 0 && fieldType == LUA_TNUMBER) {
-            config->use_delta_palette = lua_tointeger(L, -1);
-        }
-        else if (strcmp(fieldName, "use_sharp_yuv") == 0 && fieldType == LUA_TNUMBER) {
-            config->use_sharp_yuv = lua_tointeger(L, -1);
-        }
-        else if (strcmp(fieldName, "qmin") == 0 && fieldType == LUA_TNUMBER) {
-            config->qmin = lua_tointeger(L, -1);
-        }
-        else if (strcmp(fieldName, "qmax") == 0 && fieldType == LUA_TNUMBER) {
-            config->qmax = lua_tointeger(L, -1);
-        }
-        lua_pop(L, 1);  // 弹出值，保留键
+static const cwebp_config_field cwebp_int_fields[] = {
+  CONFIG_FIELD(lossless),
+  CONFIG_FIELD(method),
+  CONFIG_FIELD(target_size),
+  CONFIG_FIELD(segments),
+  CONFIG_FIELD(sns_strength),
+  CONFIG_FIELD(filter_strength),
+  CONFIG_FIELD(filter_sharpness),
+  CONFIG_FIELD(filter_type),
+  CONFIG_FIELD(autofilter),
+  CONFIG_FIELD(alpha_compression),
+  CONFIG_FIELD(alpha_filtering),
+  CONFIG_FIELD(alpha_quality),
+  CONFIG_FIELD(pass),
+  CONFIG_FIELD(show_compressed),
+  CONFIG_FIELD(preprocessing),
+  CONFIG_FIELD(partitions),
+  CONFIG_FIELD(partition_limit),
+  CONFIG_FIELD(emulate_jpeg_size),
+  CONFIG_FIELD(thread_level),
+  CONFIG_FIELD(low_memory),
+  CONFIG_FIELD(near_lossless),
+  CONFIG_FIELD(exact),
+  CONFIG_FIELD(use_delta_palette),
+  CONFIG_FIELD(use_sharp_yuv),
+  CONFIG_FIELD(qmin),
+  CONFIG_FIELD(qmax),
+};
+
+static const cwebp_config_field cwebp_float_fields[] = {
+  CONFIG_FIELD(quality),
+  CONFIG_FIELD(target_PSNR),
+};
+
+#undef CONFIG_FIELD
+
+static int cwebp_find_field(const cwebp_config_field* fields, size_t n,
+                            const char* name) {
+  size_t i;
+  for (i = 0; i < n; ++i) {
+    if (strcmp(fields[i].name, name) == 0) return (int)i;
+  }
+  return -1;
+}
+
+// Applies the Lua table at stack 'index' (must be a table) onto 'config'.
+// Raises a Lua error on unknown field names or non-numeric values.
+static void cwebp_loadWebpConf(lua_State* L, int index, WebPConfig* config) {
+  static const size_t kNumInt =
+      sizeof(cwebp_int_fields) / sizeof(cwebp_int_fields[0]);
+  static const size_t kNumFloat =
+      sizeof(cwebp_float_fields) / sizeof(cwebp_float_fields[0]);
+
+  luaL_checktype(L, index, LUA_TTABLE);
+  lua_pushnil(L);
+  while (lua_next(L, index) != 0) {
+    const char* name;
+    int fi;
+    if (lua_type(L, -2) != LUA_TSTRING) {
+      luaL_error(L, "cwebp: config table keys must be strings");
     }
-    return 1;
+    name = lua_tostring(L, -2);
+
+    fi = cwebp_find_field(cwebp_int_fields, kNumInt, name);
+    if (fi >= 0) {
+      if (!lua_isnumber(L, -1)) {
+        luaL_error(L, "cwebp: config field '%s' must be a number", name);
+      }
+      *(int*)((char*)config + cwebp_int_fields[fi].offset) =
+          (int)lua_tointeger(L, -1);
+      lua_pop(L, 1);
+      continue;
+    }
+
+    fi = cwebp_find_field(cwebp_float_fields, kNumFloat, name);
+    if (fi >= 0) {
+      if (!lua_isnumber(L, -1)) {
+        luaL_error(L, "cwebp: config field '%s' must be a number", name);
+      }
+      *(float*)((char*)config + cwebp_float_fields[fi].offset) =
+          (float)lua_tonumber(L, -1);
+      lua_pop(L, 1);
+      continue;
+    }
+
+    if (strcmp(name, "image_hint") == 0) {
+      // Accept either a string ("photo", "picture", "graph", "default") or
+      // the raw WEBP_HINT_* integer value.
+      if (lua_type(L, -1) == LUA_TSTRING) {
+        const char* const hint = lua_tostring(L, -1);
+        if (!strcmp(hint, "photo")) config->image_hint = WEBP_HINT_PHOTO;
+        else if (!strcmp(hint, "picture")) config->image_hint = WEBP_HINT_PICTURE;
+        else if (!strcmp(hint, "graph")) config->image_hint = WEBP_HINT_GRAPH;
+        else if (!strcmp(hint, "default")) config->image_hint = WEBP_HINT_DEFAULT;
+        else {
+          luaL_error(L, "cwebp: config field 'image_hint' has unknown value '%s'",
+                     hint);
+        }
+      } else if (lua_isnumber(L, -1)) {
+        config->image_hint = (WebPImageHint)lua_tointeger(L, -1);
+      } else {
+        luaL_error(L, "cwebp: config field 'image_hint' must be a string or number");
+      }
+      lua_pop(L, 1);
+      continue;
+    }
+
+    luaL_error(L, "cwebp: unknown config field '%s'", name);
+  }
+}
+
+// Applies the optional config table at stack index 3 (nil or absent is fine)
+// and validates the result.
+static void cwebp_applyConfig(lua_State* L, WebPConfig* config) {
+  if (lua_gettop(L) >= 3 && !lua_isnil(L, 3)) {
+    cwebp_loadWebpConf(L, 3, config);
+    if (!WebPValidateConfig(config)) {
+      luaL_error(L, "cwebp: invalid WebP configuration");
+    }
+  }
+}
+
+// Shared setup: initializes config/picture/writer for encoding.
+static void cwebp_begin(lua_State* L, WebPConfig* config, WebPPicture* picture,
+                        WebPMemoryWriter* writer) {
+  if (!WebPConfigInit(config) || !WebPPictureInit(picture)) {
+    luaL_error(L, "cwebp: webp library version mismatch");
+  }
+  WebPMemoryWriterInit(writer);
+  picture->use_argb = 1;   // decoders always produce ARGB samples
+  picture->writer = WebPMemoryWrite;
+  picture->custom_ptr = (void*)writer;
 }
 
 int lcwebp_path2webp(lua_State* L) {
-    luaL_checkudata(L, 1, "__cwebp__");
-    const char * path = luaL_checkstring(L, 2);
-    WebPConfig config;
-    WebPMemoryWriter memory_writer;
-    WebPMemoryWriterInit(&memory_writer);
-    WebPPicture picture;
-    if (!WebPPictureInit(&picture) ||
-        !WebPConfigInit(&config)) {
-        fprintf(stderr, "Error! Version mismatch!\n");
-        return -1;
-    }
-    config.method = 0;
-    config.quality = 100;
-    picture.use_argb = 1;
-    picture.width = 1;  // width and height will auto get, bug need greater than 0
-    picture.height = 1;
-    picture.writer = WebPMemoryWrite;
-    picture.custom_ptr = (void*)&memory_writer;
-    if (!WebPPictureAlloc(&picture)) {
-        return 0;   // memory error
-    }
-    ReadImage((const char*)path, &picture);
-    int ok = WebPEncode(&config, &picture);
-    if (!ok) {
-        printf("encoding error\n");
-    }
-    lua_pushlstring(L, (const char *)memory_writer.mem, memory_writer.size);
+  WebPConfig config;
+  WebPPicture picture;
+  WebPMemoryWriter writer;
+  const char* const path = luaL_checkstring(L, 2);
+
+  luaL_checkudata(L, 1, "__cwebp__");
+  if (lua_gettop(L) >= 3 && !lua_isnil(L, 3)) {
+    luaL_checktype(L, 3, LUA_TTABLE);
+  }
+  cwebp_begin(L, &config, &picture, &writer);
+  cwebp_applyConfig(L, &config);
+
+  if (!cwebp_ReadImage(path, &picture)) {
     WebPPictureFree(&picture);
-    WebPMemoryWriterClear(&memory_writer);
-    return 1;
+    return luaL_error(L, "cwebp: failed to read image '%s'", path);
+  }
+  if (!WebPEncode(&config, &picture)) {
+    WebPPictureFree(&picture);
+    WebPMemoryWriterClear(&writer);
+    return luaL_error(L, "cwebp: failed to encode image '%s'", path);
+  }
+  lua_pushlstring(L, (const char*)writer.mem, writer.size);
+  WebPPictureFree(&picture);
+  WebPMemoryWriterClear(&writer);
+  return 1;
 }
 
 int lcwebp_image2webp(lua_State* L) {
-    luaL_checkudata(L, 1, "__cwebp__");
-    size_t imageDataSize;
-    const uint8_t * imageData = (const uint8_t *)luaL_checklstring (L, 2, &imageDataSize);
-    WebPConfig config;
-    WebPMemoryWriter memory_writer;
-    WebPMemoryWriterInit(&memory_writer);
-    WebPPicture picture;
-        if (!WebPPictureInit(&picture) ||
-        !WebPConfigInit(&config)) {
-        fprintf(stderr, "Error! Version mismatch!\n");
-        return -1;
-    }
-    config.method = 0;
-    config.quality = 100;
-    picture.use_argb = 1;
-    picture.width = 1; // width and height will auto get, bug need greater than 0
-    picture.height = 1;
-    picture.writer = WebPMemoryWrite;
-    picture.custom_ptr = (void*)&memory_writer;
-    if (!WebPPictureAlloc(&picture)) {
-        return 0;   // memory error
-    }
+  WebPConfig config;
+  WebPPicture picture;
+  WebPMemoryWriter writer;
+  size_t data_size = 0;
+  const uint8_t* const data = (const uint8_t*)luaL_checklstring(L, 2, &data_size);
 
-    if (!lua_istable(L, 5)) {
-        printf("Error: Expected a table\n");
-    }
-    cwebp_loadWebpConf(L, &config);
-    WebPImageReader reader;
+  luaL_checkudata(L, 1, "__cwebp__");
+  if (lua_gettop(L) >= 3 && !lua_isnil(L, 3)) {
+    luaL_checktype(L, 3, LUA_TTABLE);
+  }
+  cwebp_begin(L, &config, &picture, &writer);
+  cwebp_applyConfig(L, &config);
 
-    reader = WebPGuessImageReader(imageData, imageDataSize);
-    int ok = reader(imageData, imageDataSize, &picture, 1, NULL);
-    if (!ok) {
-        printf("encoding error\n");
-    }
-    ok = WebPEncode(&config, &picture);
-    if (!ok) {
-        printf("encoding error\n");
-    }
-    lua_pushlstring(L, (const char *)memory_writer.mem, memory_writer.size);
+  if (!WebPGuessImageReader(data, data_size)(data, data_size, &picture, 1, NULL)) {
     WebPPictureFree(&picture);
-    WebPMemoryWriterClear(&memory_writer);
-    return 1;
+    return luaL_error(L, "cwebp: unsupported or corrupt input image data");
+  }
+  if (!WebPEncode(&config, &picture)) {
+    WebPPictureFree(&picture);
+    WebPMemoryWriterClear(&writer);
+    return luaL_error(L, "cwebp: failed to encode image");
+  }
+  lua_pushlstring(L, (const char*)writer.mem, writer.size);
+  WebPPictureFree(&picture);
+  WebPMemoryWriterClear(&writer);
+  return 1;
 }
