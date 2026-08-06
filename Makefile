@@ -38,11 +38,12 @@ WEBP_AVAILABLE := $(shell $(PKG_CONFIG) --atleast-version=$(WEBP_MIN_VERSION) \
 ifeq ($(WEBP_AVAILABLE),yes)
 WEBP_CFLAGS := $(shell $(PKG_CONFIG) --cflags $(WEBP_PC) 2>/dev/null)
 WEBP_LIBS := $(shell $(PKG_CONFIG) --libs $(WEBP_PC) 2>/dev/null) \
-             $(shell $(PKG_CONFIG) --libs libwebpdemux 2>/dev/null)
+             $(shell $(PKG_CONFIG) --libs libwebpdemux 2>/dev/null) \
+             $(shell $(PKG_CONFIG) --libs libwebpmux 2>/dev/null)
 else
 WEBP_BUILD_DIR := third_party/libwebp/build
 WEBP_CFLAGS := -Ithird_party/libwebp/src
-WEBP_LIBS := -L$(WEBP_BUILD_DIR) -lwebp -lwebpdemux
+WEBP_LIBS := -L$(WEBP_BUILD_DIR) -lwebp -lwebpdemux -lwebpmux
 WEBP_TARGETS := $(WEBP_BUILD_DIR)/.built
 $(info NOTE: system libwebp not found or older than $(WEBP_MIN_VERSION); \
 building the vendored libwebp (third_party/libwebp) with CMake)
@@ -58,7 +59,7 @@ $(WEBP_BUILD_DIR)/.built:
 	  -DWEBP_BUILD_ANIM_UTILS=OFF -DWEBP_BUILD_VWEBP=OFF \
 	  -DWEBP_BUILD_WEBPMUX=OFF
 	# --build works with any generator (Makefiles or Ninja).
-	cmake --build $(WEBP_BUILD_DIR) --target webp webpdemux
+	cmake --build $(WEBP_BUILD_DIR) --target webp webpdemux libwebpmux
 	touch $@
 endif
 

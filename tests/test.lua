@@ -194,6 +194,22 @@ assert_eq(#rgba, 16 * 16 * 4, "RGBA raw byte count")
 assert_eq(rgba:byte(4), 128, "RGBA first pixel alpha")
 assert_eq(rgba:byte(4 + 4 + 4 + 4 + 4), 255, "RGBA second pixel alpha")
 
+-- BGRA / ARGB channel order
+local bgra = dwebp:webp2Image(webp_data, "BGRA")
+assert_eq(#bgra, 16 * 16 * 4, "BGRA byte count")
+assert_eq(bgra:byte(1), 40, "BGRA first pixel B")
+assert_eq(bgra:byte(2), 7, "BGRA first pixel G")
+assert_eq(bgra:byte(3), 3, "BGRA first pixel R")
+assert_eq(bgra:byte(4), 128, "BGRA first pixel A")
+local argb = dwebp:webp2Image(webp_data, "ARGB")
+assert_eq(#argb, 16 * 16 * 4, "ARGB byte count")
+assert_eq(argb:byte(1), 128, "ARGB first pixel A")
+assert_eq(argb:byte(2), 3, "ARGB first pixel R")
+assert_eq(argb:byte(4), 40, "ARGB first pixel B")
+-- premultiplied variants: byte count only (pixel values differ)
+assert_eq(#dwebp:webp2Image(webp_data, "bgrA"), 16 * 16 * 4, "bgrA byte count")
+assert_eq(#dwebp:webp2Image(webp_data, "Argb"), 16 * 16 * 4, "Argb byte count")
+
 local bgr = dwebp:webp2Image(webp_data, "BGR")
 assert_eq(#bgr, 16 * 16 * 3, "BGR raw byte count")
 assert_eq(bgr:byte(1), 40, "BGR first pixel B")
@@ -247,11 +263,22 @@ assert_eq(iw, 16, "path2Image width")
 assert_eq(ih, 16, "path2Image height")
 assert_eq(ict, 6, "path2Image color type")
 
--- Other container formats
+-- Other container formats: content-level pixel checks using the fixture
+-- formula (R=x*16+3, G=y*16+7, B=((x+y)%2)?200:40, A=((x+y)%3)?255:128)
 local bmp = dwebp:webp2Image(webp_data, "bmp")
 assert_eq(bmp:sub(1, 2), "BM", "bmp magic")
+-- BMP is bottom-up, 32bpp (alpha): data starts at byte 71 (54+16 header),
+-- first file row is the BOTTOM row (y=15)
+assert_eq(bmp:byte(71), 200, "bmp bottom row B (y=15, x=0)")
+assert_eq(bmp:byte(72), 247, "bmp bottom row G (y=15)")
+assert_eq(bmp:byte(73), 3, "bmp bottom row R (x=0)")
 local tiff = dwebp:webp2Image(webp_data, "tiff")
 assert_eq(tiff:sub(1, 4), "II*\0", "tiff magic (little endian)")
+-- TIFF is top-down, RGBA: pixel data starts at byte 211 (210-byte header)
+assert_eq(tiff:byte(211), 3, "tiff first pixel R")
+assert_eq(tiff:byte(212), 7, "tiff first pixel G")
+assert_eq(tiff:byte(213), 40, "tiff first pixel B")
+assert_eq(tiff:byte(214), 128, "tiff first pixel A")
 local yuv = dwebp:webp2Image(webp_data, "yuv")
 -- exact size is decoder-stride dependent; require at least the luma plane
 assert(#yuv > 16 * 16, "raw yuv must contain the luma plane")
@@ -264,6 +291,22 @@ local cropped = dwebp:webp2Image(webp_data, "ppm", {
   crop_width = 8, crop_height = 8,
 })
 assert(cropped:match("P6\n8 8\n255\n"), "crop must produce an 8x8 ppm")
+
+-- crop content: offset (4,4) changes the first pixel (R = x*16+3)
+local cropped4 = dwebp:webp2Image(webp_data, "ppm", {
+  use_cropping = 1, crop_left = 4, crop_top = 4,
+  crop_width = 8, crop_height = 8,
+})
+local c4h = cropped4:find("\n255\n", 1, true)
+assert(c4h, "crop offset ppm header")
+assert_eq(cropped4:sub(c4h + 5):byte(1), 4 * 16 + 3, "crop offset first pixel R")
+
+-- odd dimensions are preserved (7x7 crop)
+local odd = dwebp:webp2Image(webp_data, "ppm", {
+  use_cropping = 1, crop_left = 0, crop_top = 0,
+  crop_width = 7, crop_height = 7,
+})
+assert(odd:match("P6\n7 7\n255\n"), "7x7 crop ppm header")
 
 local scaled = dwebp:webp2Image(webp_data, "ppm", {
   use_scaling = 1, scaled_width = 32, scaled_height = 32,
@@ -310,6 +353,17 @@ assert_eq(info.width, 16, "info width")
 assert_eq(info.height, 16, "info height")
 assert_eq(info.has_alpha, true, "info has_alpha")
 assert_eq(info.format, "lossless", "info format")
+
+-- Animated WebP: info() detects it; decoding errors (documented behavior)
+local anim_data = read_file("tests/fixture-anim.webp")
+local anim_info = dwebp:info(anim_data)
+assert_eq(anim_info.width, 16, "anim width")
+assert_eq(anim_info.height, 16, "anim height")
+assert_eq(anim_info.has_animation, true, "anim has_animation")
+assert_eq(anim_info.format, "undefined", "anim format is undefined")
+assert_error("failed to decode", function()
+  dwebp:webp2Image(anim_data, "png")
+end)
 
 local info2 = dwebp:infoFromPath("tests/fixture.webp")
 assert_eq(info2.width, 16, "infoFromPath width")
@@ -369,6 +423,21 @@ end)
 -- Empty input data
 assert_error("corrupt", function() cwebp:image2Webp("") end)
 assert_error("corrupt", function() dwebp:webp2Image("", "png") end)
+assert_error("bad argument", function() cwebp:image2Webp(nil) end)
+assert_error("bad argument", function() dwebp:webp2Image(nil, "png") end)
+
+-- Truncated webp data
+assert_error("corrupt", function()
+  dwebp:webp2Image(webp_data:sub(1, 20), "png")
+end)
+
+-- Crop outside the image bounds
+assert_error("failed to decode", function()
+  dwebp:webp2Image(webp_data, "ppm", {
+    use_cropping = 1, crop_left = 0, crop_top = 0,
+    crop_width = 100, crop_height = 100,
+  })
+end)
 
 -- image_hint with an unknown string
 assert_error("image_hint", function()

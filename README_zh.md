@@ -132,7 +132,7 @@ io.open("webp2ppm2.ppm", "wb"):write(ppm):close()
 
 | 类别 | 取值 | 返回 |
 | ------ | ------ | ------ |
-| 容器格式 | `png`、`ppm`、`pam`、`bmp`、`tiff`、`pgm`、`yuv`、`yuva`、`alpha` | 单个字节串（文件字节） |
+| 容器格式 | `png`、`ppm`、`pam`、`bmp`、`tiff`、`pgm`、`yuv`、`yuva`、`alpha`（别名：`alpha_plane_only`） | 单个字节串（文件字节） |
 | 强制色彩空间 | `RGB`、`BGR` — 3 字节/像素 | `bytes, width, height` |
 | 强制色彩空间 | `RGBA`、`BGRA`、`ARGB`、`rgbA`、`bgrA`、`Argb` — 4 字节/像素 | `bytes, width, height` |
 | 强制色彩空间 | `RGBA_4444`、`RGB_565`、`rgbA_4444` — 2 字节/像素 | `bytes, width, height` |
@@ -170,8 +170,7 @@ local rgb, w, h = dwebp:webp2Image(data, "RGB")      -- w*h*3 字节
 | `has_animation` | 布尔 | 码流是否为动画 |
 | `format` | 字符串 | `"undefined"`、`"lossy"` 或 `"lossless"` |
 
-所有失败都会抛出带描述信息的 Lua 错误。不支持动画 WebP（只解码第一帧）；
-`info()` 会报告 `has_animation` 以便调用方检测。
+所有失败都会抛出带描述信息的 Lua 错误。**不支持动画 WebP**：解码动画会直接报错（而非静默使用第一帧），请先用 `info()` 的 `has_animation` 检测并单独处理。
 
 ## 安装
 

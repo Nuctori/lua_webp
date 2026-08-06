@@ -35,6 +35,36 @@ jobs:
           LUA_BIN=lua${{ matrix.lua_version }}
           CFLAGS='-O2 -std=c99 -Wall -Wextra -Werror' test
 
+  # Exercises the vendored-libwebp CMake fallback (no system libwebp) and
+  # verifies the committed fixtures stay in sync with the generator.
+  vendored-fallback:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config cmake \
+            lua5.4 liblua5.4-dev libpng-dev libjpeg-dev libtiff-dev
+
+      - name: Build (vendored libwebp)
+        run: >-
+          make LUA_VERSION=5.4 LUA_BIN=lua5.4
+          CFLAGS='-O2 -std=c99 -Wall -Wextra -Werror' build
+
+      - name: Test (vendored libwebp)
+        run: >-
+          make LUA_VERSION=5.4 LUA_BIN=lua5.4
+          CFLAGS='-O2 -std=c99 -Wall -Wextra -Werror' test
+
+      - name: Fixtures are reproducible
+        run: >-
+          make LUA_VERSION=5.4 fixtures &&
+          git diff --exit-code -- tests/
+
   macos:
     runs-on: macos-latest
 
@@ -75,6 +105,7 @@ jobs:
             mingw-w64-ucrt-x86_64-gcc
             mingw-w64-ucrt-x86_64-make
             mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-cmake
             mingw-w64-ucrt-x86_64-lua54
             mingw-w64-ucrt-x86_64-libwebp
             mingw-w64-ucrt-x86_64-libpng

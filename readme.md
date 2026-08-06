@@ -139,7 +139,7 @@ out-of-range values raise a Lua error.
 
 | Category | Values | Returns |
 | ---------- | -------- | --------- |
-| container | `png`, `ppm`, `pam`, `bmp`, `tiff`, `pgm`, `yuv`, `yuva`, `alpha` | single string (file bytes) |
+| container | `png`, `ppm`, `pam`, `bmp`, `tiff`, `pgm`, `yuv`, `yuva`, `alpha` (alias: `alpha_plane_only`) | single string (file bytes) |
 | forced colorspace | `RGB`, `BGR` — 3 bytes/px | `bytes, width, height` |
 | forced colorspace | `RGBA`, `BGRA`, `ARGB`, `rgbA`, `bgrA`, `Argb` — 4 bytes/px | `bytes, width, height` |
 | forced colorspace | `RGBA_4444`, `RGB_565`, `rgbA_4444` — 2 bytes/px | `bytes, width, height` |
@@ -179,8 +179,9 @@ Maps directly onto libwebp's `WebPDecoderOptions`. All fields are numbers.
 | `format` | string | `"undefined"`, `"lossy"`, or `"lossless"` |
 
 All failures raise Lua errors with descriptive messages. Animated WebP files
-are not supported (only the first frame is decoded); `info()` reports
-`has_animation` so callers can detect them.
+are **not supported**: decoding one raises an error rather than silently
+using the first frame, so check `info()`'s `has_animation` first and handle
+animations separately.
 
 ## Installation
 

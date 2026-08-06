@@ -19,6 +19,7 @@
 #include <tiffio.h>
 
 #include <webp/encode.h>
+#include <webp/mux.h>
 
 #define W 16
 #define H 16
@@ -111,6 +112,64 @@ static int write_tiff(const char* path) {
   return 1;
 }
 
+// Writes a 2-frame animated WebP (tests/fixture-anim.webp): frame 1 at t=0
+// is the checkerboard, frame 2 at t=100ms is a solid fill. Used to lock
+// down the animation behavior (info().has_animation = true, decode errors).
+static int write_anim_webp(const char* path) {
+  WebPAnimEncoder* const enc = WebPAnimEncoderNew(W, H, NULL);
+  WebPData data;
+  FILE* f;
+  int ok = 0;
+  if (enc == NULL) return 0;
+  WebPDataInit(&data);
+
+  {
+    WebPPicture pic;
+    int i;
+    WebPPictureInit(&pic);
+    pic.width = W;
+    pic.height = H;
+    pic.use_argb = 1;
+    if (!WebPPictureAlloc(&pic)) {
+      WebPAnimEncoderDelete(enc);
+      return 0;
+    }
+    // frame 1: same pixels as the still fixtures
+    for (i = 0; i < W * H; ++i) {
+      const int x = i % W, y = i / W;
+      const unsigned char* const p = &pixels[(size_t)y * W * 4 + x * 4];
+      pic.argb[i] = ((uint32_t)p[3] << 24) | ((uint32_t)p[0] << 16) |
+                    ((uint32_t)p[1] << 8) | p[2];
+    }
+    if (!WebPAnimEncoderAdd(enc, &pic, 0, NULL)) {
+      WebPPictureFree(&pic);
+      WebPAnimEncoderDelete(enc);
+      return 0;
+    }
+    // frame 2 (t=100ms): solid magenta
+    for (i = 0; i < W * H; ++i) pic.argb[i] = 0xFFFF00FFu;
+    if (!WebPAnimEncoderAdd(enc, &pic, 100, NULL)) {
+      WebPPictureFree(&pic);
+      WebPAnimEncoderDelete(enc);
+      return 0;
+    }
+    WebPPictureFree(&pic);
+  }
+
+  if (!WebPAnimEncoderAssemble(enc, &data) || data.bytes == NULL) {
+    WebPAnimEncoderDelete(enc);
+    return 0;
+  }
+  f = fopen(path, "wb");
+  if (f != NULL) {
+    ok = (fwrite(data.bytes, 1, data.size, f) == data.size);
+    fclose(f);
+  }
+  WebPDataClear(&data);
+  WebPAnimEncoderDelete(enc);
+  return ok;
+}
+
 int main(void) {
   build_pixels();
   if (!write_png("tests/fixture.png")) {
@@ -125,6 +184,10 @@ int main(void) {
     fprintf(stderr, "failed to write tests/fixture.tiff\n");
     return 1;
   }
-  printf("wrote tests/fixture.{png,webp,tiff} (%dx%d RGBA)\n", W, H);
+  if (!write_anim_webp("tests/fixture-anim.webp")) {
+    fprintf(stderr, "failed to write tests/fixture-anim.webp\n");
+    return 1;
+  }
+  printf("wrote tests/fixture.{png,webp,tiff,anim.webp} (%dx%d RGBA)\n", W, H);
   return 0;
 }
