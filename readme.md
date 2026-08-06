@@ -1,5 +1,7 @@
 # lua_webp
 
+> **[中文文档](README_zh.md)** · English
+
 `lua_webp` is a Lua C extension for WebP image conversion. It exposes
 `cwebp`- and `dwebp`-style entry points:
 
@@ -98,28 +100,83 @@ io.open("webp2ppm2.ppm", "wb"):write(ppm):close()
 
 ### API
 
-`cwebp:path2Webp(path, config?)` → webp string
-`cwebp:image2Webp(data, config?)` → webp string
-`dwebp:path2Image(path, format, options?)` → image string
-`dwebp:webp2Image(data, format, options?)` → image string
-`dwebp:info(data)` → `{ width, height, has_alpha, has_animation, format }`
-`dwebp:infoFromPath(path)` → same info table
-`webp.version()` → `{ encoder, decoder }` version strings
+| Function | Returns |
+| ---------- | --------- |
+| `cwebp:path2Webp(path, config?)` | WebP bytes (string) |
+| `cwebp:image2Webp(data, config?)` | WebP bytes (string) |
+| `dwebp:path2Image(path, format, options?)` | image bytes (string) |
+| `dwebp:webp2Image(data, format, options?)` | image bytes, or `bytes, width, height` for forced colorspaces |
+| `dwebp:info(data)` | info table |
+| `dwebp:infoFromPath(path)` | info table |
+| `webp.version()` | `{ encoder, decoder }` |
 
-- `config` maps directly onto `WebPConfig` (`quality`, `lossless`, `method`,
-  `target_size`, `alpha_quality`, `near_lossless`, `exact`, `use_sharp_yuv`,
-  ...; see `src/webp/encode.h`). `image_hint` accepts `"photo"`, `"picture"`,
-  `"graph"` or a raw `WEBP_HINT_*` integer. Unknown fields and out-of-range
-  values raise a Lua error.
-- `format` is one of:
-  - container formats (single string result): `png`, `ppm`, `pam`, `bmp`,
-    `tiff`, `pgm`, `yuv`, `yuva`, `alpha`
-  - forced colorspaces, returned as **raw, tightly packed pixel bytes** plus
-    their dimensions — `bytes, width, height = dwebp:webp2Image(data, "RGBA")`:
-    `RGB`/`BGR` (3 bytes/px), `RGBA`/`BGRA`/`ARGB`/`rgbA`/`bgrA`/`Argb`
-    (4 bytes/px), `RGBA_4444`/`RGB_565`/`rgbA_4444` (2 bytes/px)
-- `options` maps onto `WebPDecoderOptions` (`use_threads`, `use_cropping` +
-  `crop_*`, `use_scaling` + `scaled_*`, `flip`, `dithering_strength`, ...).
+#### `config` — encoder settings (optional)
+
+Maps directly onto libwebp's `WebPConfig` (see `src/webp/encode.h` for the
+full list). All fields are numbers unless noted. Unknown fields and
+out-of-range values raise a Lua error.
+
+| Field | Range / values | Meaning |
+| ------- | ---------------- | --------- |
+| `quality` | 0–100 | lossy quality (75 default) |
+| `lossless` | 0 or 1 | lossless encoding |
+| `method` | 0–6 | quality/speed trade-off |
+| `target_size` | ≥ 0 | desired output size in bytes |
+| `target_PSNR` | ≥ 0 | minimal distortion target |
+| `segments`, `sns_strength`, `filter_strength`, `filter_sharpness`, `filter_type` | — | VP8 analysis / filtering |
+| `autofilter` | 0 or 1 | auto filter strength |
+| `alpha_compression`, `alpha_filtering`, `alpha_quality` | — | alpha plane coding |
+| `pass` | 1–10 | entropy-analysis passes |
+| `preprocessing`, `partitions`, `partition_limit` | — | internal knobs |
+| `emulate_jpeg_size`, `thread_level`, `low_memory` | — | |
+| `near_lossless` | 0–100 | near-lossless strength |
+| `exact` | 0 or 1 | preserve exact RGB values |
+| `use_delta_palette`, `use_sharp_yuv` | 0 or 1 | |
+| `qmin`, `qmax` | 0–100 | quality factor bounds |
+| `image_hint` | `"photo"` \| `"picture"` \| `"graph"` \| `"default"` \| int | image type hint (also accepts the raw `WEBP_HINT_*` value) |
+
+#### `format` — decoder output format
+
+| Category | Values | Returns |
+| ---------- | -------- | --------- |
+| container | `png`, `ppm`, `pam`, `bmp`, `tiff`, `pgm`, `yuv`, `yuva`, `alpha` | single string (file bytes) |
+| forced colorspace | `RGB`, `BGR` — 3 bytes/px | `bytes, width, height` |
+| forced colorspace | `RGBA`, `BGRA`, `ARGB`, `rgbA`, `bgrA`, `Argb` — 4 bytes/px | `bytes, width, height` |
+| forced colorspace | `RGBA_4444`, `RGB_565`, `rgbA_4444` — 2 bytes/px | `bytes, width, height` |
+
+Forced colorspaces return **raw, tightly packed pixel bytes** (no stride
+padding) plus their dimensions:
+
+```lua
+local bytes, w, h = dwebp:webp2Image(data, "RGBA")   -- w*h*4 bytes
+local rgb, w, h = dwebp:webp2Image(data, "RGB")      -- w*h*3 bytes
+```
+
+#### `options` — decoder settings (optional)
+
+Maps directly onto libwebp's `WebPDecoderOptions`. All fields are numbers.
+
+| Field | Meaning |
+| ------- | --------- |
+| `use_threads` | multi-threaded decoding |
+| `use_cropping` + `crop_left`, `crop_top`, `crop_width`, `crop_height` | crop the output |
+| `use_scaling` + `scaled_width`, `scaled_height` | scale the output (after cropping) |
+| `flip` | flip output vertically |
+| `bypass_filtering` | skip in-loop filtering |
+| `no_fancy_upsampling` | use faster pointwise upsampler |
+| `dithering_strength` | 0–100, dithering strength |
+| `alpha_dithering_strength` | 0–100, alpha-plane dithering |
+
+#### `info` table
+
+`dwebp:info(data)` / `dwebp:infoFromPath(path)` return:
+
+| Field | Type | Meaning |
+| ------- | ------ | --------- |
+| `width`, `height` | integer | pixel dimensions |
+| `has_alpha` | boolean | bitstream contains an alpha channel |
+| `has_animation` | boolean | bitstream is an animation |
+| `format` | string | `"undefined"`, `"lossy"`, or `"lossless"` |
 
 All failures raise Lua errors with descriptive messages. Animated WebP files
 are not supported (only the first frame is decoded); `info()` reports
