@@ -145,14 +145,15 @@ $(TARGET): $(MODULE_SOURCES) lua_webp.h $(IMAGEIO_SOURCES) $(WEBP_TARGETS)
 test: build
 	$(LUA_BIN) tests/test.lua
 
-# Regenerates the committed test fixtures (tests/fixture.{png,webp,jpg}).
+# Regenerates the committed test fixtures (tests/fixture.{png,webp,tiff,jpg}).
 fixtures: tools/gen_fixtures $(WEBP_TARGETS)
 	cp logo.jpg tests/fixture.jpg
 	./tools/gen_fixtures
 
 tools/gen_fixtures: tools/gen_fixtures.c $(WEBP_TARGETS)
-	$(CC) $(CFLAGS) $(WEBP_CFLAGS) $(PNG_CFLAGS) -Ithird_party/libwebp \
-	  -o $@ $< $(LDFLAGS) $(WEBP_LIBS) $(PNG_LIBS) $(LIBS)
+	$(CC) $(CFLAGS) $(WEBP_CFLAGS) $(PNG_CFLAGS) $(TIFF_CFLAGS) \
+	  -Ithird_party/libwebp \
+	  -o $@ $< $(LDFLAGS) $(WEBP_LIBS) $(PNG_LIBS) $(TIFF_LIBS) $(LIBS)
 
 clean:
 	$(RM) $(TARGET)

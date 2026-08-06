@@ -3,8 +3,10 @@
 //   tests/fixture.png  - 16x16 RGBA checkerboard (R and G vary linearly,
 //                         B is a checkerboard, A alternates 255/128)
 //   tests/fixture.webp - lossless WebP encoding of the same pixels
+//   tests/fixture.tiff - TIFF encoding of the same pixels (RGBA)
 //
-// Build & run via `make fixtures` (requires libwebp + libpng dev packages).
+// Build & run via `make fixtures` (requires libwebp + libpng + libtiff dev
+// packages).
 //
 // The pixel formula is intentionally unusual (odd RGB values, 128-alpha
 // columns) so that tests can verify lossless round-trips pixel-exactly.
@@ -14,6 +16,7 @@
 #include <string.h>
 
 #include <png.h>
+#include <tiffio.h>
 
 #include <webp/encode.h>
 
@@ -84,6 +87,30 @@ static int write_webp(const char* path) {
   return ok;
 }
 
+static int write_tiff(const char* path) {
+  TIFF* const tiff = TIFFOpen(path, "w");
+  static const uint16_t extra_samples = EXTRASAMPLE_ASSOCALPHA;
+  int y;
+  if (tiff == NULL) return 0;
+  TIFFSetField(tiff, TIFFTAG_IMAGEWIDTH, W);
+  TIFFSetField(tiff, TIFFTAG_IMAGELENGTH, H);
+  TIFFSetField(tiff, TIFFTAG_SAMPLESPERPIXEL, 4);
+  TIFFSetField(tiff, TIFFTAG_BITSPERSAMPLE, 8);
+  TIFFSetField(tiff, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_RGB);
+  TIFFSetField(tiff, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
+  // declare the 4th channel as associated alpha (libwebp's tiffdec reads it)
+  TIFFSetField(tiff, TIFFTAG_EXTRASAMPLES, 1, &extra_samples);
+  TIFFSetField(tiff, TIFFTAG_ROWSPERSTRIP, TIFFDefaultStripSize(tiff, 0));
+  for (y = 0; y < H; ++y) {
+    if (TIFFWriteScanline(tiff, &pixels[(size_t)y * W * 4], y, 0) < 0) {
+      TIFFClose(tiff);
+      return 0;
+    }
+  }
+  TIFFClose(tiff);
+  return 1;
+}
+
 int main(void) {
   build_pixels();
   if (!write_png("tests/fixture.png")) {
@@ -94,6 +121,10 @@ int main(void) {
     fprintf(stderr, "failed to write tests/fixture.webp\n");
     return 1;
   }
-  printf("wrote tests/fixture.png and tests/fixture.webp (%dx%d RGBA)\n", W, H);
+  if (!write_tiff("tests/fixture.tiff")) {
+    fprintf(stderr, "failed to write tests/fixture.tiff\n");
+    return 1;
+  }
+  printf("wrote tests/fixture.{png,webp,tiff} (%dx%d RGBA)\n", W, H);
   return 0;
 }

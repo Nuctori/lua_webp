@@ -81,6 +81,57 @@ assert(#q10 < #q90, "lower quality must produce a smaller file")
 assert(is_webp(cwebp:image2Webp(png_data, nil)), "nil config is accepted")
 assert(is_webp(cwebp:image2Webp(png_data, {})), "empty config is accepted")
 
+-- TIFF input (tests/fixture.tiff, 16x16 RGBA from gen_fixtures)
+local tiff_data = read_file("tests/fixture.tiff")
+local tiff_out = cwebp:image2Webp(tiff_data, { lossless = 1 })
+assert(is_webp(tiff_out), "image2Webp(tiff) must return webp bytes")
+assert_eq(dwebp:info(tiff_out).width, 16, "tiff input width")
+assert_eq(dwebp:info(tiff_out).height, 16, "tiff input height")
+assert_eq(dwebp:info(tiff_out).has_alpha, true, "tiff input alpha")
+
+-- PNM inputs built by hand: PPM (P6), PGM (P5), PAM (P7)
+local ppm_in = "P6\n2 2\n255\n" .. string.rep("\200\100\50", 4)
+local ppm_out = cwebp:image2Webp(ppm_in)
+assert(is_webp(ppm_out), "image2Webp(ppm) must return webp bytes")
+assert_eq(dwebp:info(ppm_out).width, 2, "ppm input width")
+
+local pgm_in = "P5\n2 2\n255\n" .. string.rep("\128", 4)
+assert(is_webp(cwebp:image2Webp(pgm_in)), "image2Webp(pgm) must return webp bytes")
+
+local pam_in = "P7\nWIDTH 2\nHEIGHT 2\nDEPTH 4\nMAXVAL 255\n" ..
+  "TUPLTYPE RGB_ALPHA\nENDHDR\n" .. string.rep("\1\2\3\255", 4)
+assert(is_webp(cwebp:image2Webp(pam_in)), "image2Webp(pam) must return webp bytes")
+
+-- WebP input re-encode
+local webp_in = cwebp:image2Webp(webp_data, { lossless = 1 })
+assert(is_webp(webp_in), "image2Webp(webp) must return webp bytes")
+assert_eq(dwebp:info(webp_in).width, 16, "webp input width")
+assert_eq(dwebp:info(webp_in).format, "lossless", "webp re-encode stays lossless")
+
+-- image_hint accepts strings and raw WEBP_HINT_* integers
+assert(is_webp(cwebp:image2Webp(png_data, { image_hint = "photo" })),
+       "image_hint photo")
+assert(is_webp(cwebp:image2Webp(png_data, { image_hint = "picture" })),
+       "image_hint picture")
+assert(is_webp(cwebp:image2Webp(png_data, { image_hint = "graph" })),
+       "image_hint graph")
+assert(is_webp(cwebp:image2Webp(png_data, { image_hint = 2 })),
+       "image_hint raw integer")
+
+-- Every config field accepted at once (lossless encode ignores most of them)
+local full_config = {
+  lossless = 1, quality = 90, method = 4, target_size = 0,
+  target_PSNR = 0, segments = 4, sns_strength = 50,
+  filter_strength = 60, filter_sharpness = 3, filter_type = 1,
+  autofilter = 1, alpha_compression = 1, alpha_filtering = 2,
+  alpha_quality = 80, pass = 3, show_compressed = 0,
+  preprocessing = 0, partitions = 0, partition_limit = 0,
+  emulate_jpeg_size = 0, thread_level = 1, low_memory = 0,
+  near_lossless = 50, exact = 1, use_delta_palette = 0,
+  use_sharp_yuv = 0, qmin = 0, qmax = 100,
+}
+assert(is_webp(cwebp:image2Webp(png_data, full_config)), "full config accepted")
+
 -- Lossless round-trip: encode lossless, decode to PPM, compare pixels exactly
 local lossless = cwebp:image2Webp(png_data, { lossless = 1 })
 assert(is_webp(lossless), "lossless encode must return webp bytes")
@@ -150,6 +201,43 @@ assert_eq(bgr:byte(3), 3, "BGR first pixel R")
 
 local rgb565 = dwebp:webp2Image(webp_data, "RGB_565")
 assert_eq(#rgb565, 16 * 16 * 2, "RGB_565 raw byte count")
+
+-- 16-bit forced colorspaces: non-zero packed first pixel (byte-order
+-- independent)
+local rgba4444 = dwebp:webp2Image(webp_data, "RGBA_4444")
+assert_eq(#rgba4444, 16 * 16 * 2, "RGBA_4444 byte count")
+assert(rgba4444:byte(1) ~= 0 or rgba4444:byte(2) ~= 0,
+       "RGBA_4444 first pixel non-zero")
+local rgbA4444 = dwebp:webp2Image(webp_data, "rgbA_4444")
+assert_eq(#rgbA4444, 16 * 16 * 2, "rgbA_4444 byte count")
+
+-- YUVA has extra alpha planes vs plain YUV (lossy fixture has no alpha)
+local yuv_noa = dwebp:webp2Image(q10, "yuv")
+local yuva_noa = dwebp:webp2Image(q10, "yuva")
+assert(#yuva_noa > #yuv_noa, "yuva must be larger than yuv")
+
+-- Cropping combined with a forced colorspace
+local cropped_rgba, cw, ch = dwebp:webp2Image(webp_data, "RGBA", {
+  use_cropping = 1, crop_left = 0, crop_top = 0,
+  crop_width = 8, crop_height = 8,
+})
+assert_eq(cw, 8, "crop RGBA width")
+assert_eq(ch, 8, "crop RGBA height")
+assert_eq(#cropped_rgba, 8 * 8 * 4, "crop RGBA byte count")
+
+-- path2Image with a forced colorspace
+local prgba, pw2, ph2 = dwebp:path2Image("tests/fixture.webp", "RGBA")
+assert_eq(pw2, 16, "path2Image RGBA width")
+assert_eq(ph2, 16, "path2Image RGBA height")
+assert_eq(#prgba, 16 * 16 * 4, "path2Image RGBA byte count")
+
+-- More decoder options must not break output
+assert(is_png(dwebp:webp2Image(webp_data, "png", { dithering_strength = 50 })),
+       "dithering_strength option")
+assert(is_png(dwebp:webp2Image(webp_data, "png", { no_fancy_upsampling = 1 })),
+       "no_fancy_upsampling option")
+assert(is_png(dwebp:webp2Image(webp_data, "png", { bypass_filtering = 1 })),
+       "bypass_filtering option")
 
 -- path2Image matches webp2Image
 local png_from_path = dwebp:path2Image("tests/fixture.webp", "png")
@@ -268,6 +356,23 @@ end)
 assert_error("corrupt", function() dwebp:info("not webp data") end)
 assert_error("failed to load", function()
   dwebp:infoFromPath("tests/does-not-exist.webp")
+end)
+
+-- Non-string keys in config/options tables
+assert_error("keys must be strings", function()
+  cwebp:image2Webp(png_data, { [1] = 2 })
+end)
+assert_error("keys must be strings", function()
+  dwebp:webp2Image(webp_data, "png", { [1] = 2 })
+end)
+
+-- Empty input data
+assert_error("corrupt", function() cwebp:image2Webp("") end)
+assert_error("corrupt", function() dwebp:webp2Image("", "png") end)
+
+-- image_hint with an unknown string
+assert_error("image_hint", function()
+  cwebp:image2Webp(png_data, { image_hint = "bogus" })
 end)
 
 print("lua_webp tests passed")
