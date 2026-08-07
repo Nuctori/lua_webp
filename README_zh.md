@@ -58,10 +58,28 @@ make LUA_VERSION=5.4 build
 make test
 ```
 
-测试套件（`tests/test.lua`）覆盖：模块加载、文件/内存编码、无损逐像素回环
-（PPM/PAM）、PNG/BMP/TIFF/YUV 解码、编码质量、解码器选项（裁剪、缩放、
-多线程）以及错误处理。固定测试图片位于 `tests/` 下，可通过 `make fixtures`
-重新生成。
+测试套件（`tests/test.lua`，约 200 断言）覆盖：模块加载、文件/内存编码、
+无损逐像素回环（PPM/PAM）、PNG/BMP/TIFF/YUV 解码、编码质量、解码器选项
+（裁剪、缩放、多线程、翻转、抖动）、TIFF/PNM/WebP 输入、动画 WebP 检测
+以及错误处理。固定测试图片位于 `tests/` 下，可通过 `make fixtures` 重新
+生成（CI 的 vendored-fallback job 会针对重新生成的 fixture 重跑套件，
+保证生成器与测试一致）。
+
+### CI（GitHub Actions）
+
+`.github/workflows/ci.yml` 在每次 push/PR 时运行：
+
+| Job | 运行环境 | 步骤 |
+|-----|----------|------|
+| `linux` | ubuntu-latest × {5.3, 5.4} | `make build` → `make test`（`-Werror`） |
+| `macos` | macos-latest (5.4) | 相同（Homebrew lua@5.4，经 `PKG_CONFIG_PATH`/`LUA_BIN`） |
+| `windows` | windows-latest (5.4) | MSYS2 UCRT64 → `mingw32-make build/test`（`-Werror`） |
+| `vendored-fallback` | ubuntu-latest (5.4) | 用 vendored libwebp（CMake，无系统 libwebp）构建，然后重新生成 fixture 并重跑套件 |
+
+所有 job 以 `-O2 -std=c99 -Wall -Wextra -Werror` 编译；vendored-fallback
+job 证明"克隆即可构建"路径并保持 fixture 可复现。
+`.github/workflows/release.yml` 在 `v*` tag 触发，发布 Linux/macOS/Windows
+预编译产物。
 
 ## 使用示例
 

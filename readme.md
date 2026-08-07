@@ -63,11 +63,29 @@ make LUA_VERSION=5.4 build
 make test
 ```
 
-The test suite (`tests/test.lua`) covers module loading, file and memory
-encoding, lossless pixel-exact round-trips (PPM/PAM), PNG/BMP/TIFF/YUV
-decoding, encoder quality and decoder options (crop, scale, threads), and
-error handling. Fixtures are committed under `tests/` and can be regenerated
-with `make fixtures`.
+The test suite (`tests/test.lua`, ~200 assertions) covers module loading,
+file and memory encoding, lossless pixel-exact round-trips (PPM/PAM),
+PNG/BMP/TIFF/YUV decoding, encoder quality, decoder options (crop, scale,
+threads, flip, dithering), TIFF/PNM/WebP inputs, animated-WebP detection
+and error handling. Fixtures are committed under `tests/` and can be
+regenerated with `make fixtures` (the CI vendored-fallback job re-runs the
+suite against regenerated fixtures to keep generator and tests in sync).
+
+### CI (GitHub Actions)
+
+`.github/workflows/ci.yml` runs on every push/PR:
+
+| Job | Runner | Steps |
+|-----|--------|-------|
+| `linux` | ubuntu-latest × {5.3, 5.4} | `make build` → `make test` with `-Werror` |
+| `macos` | macos-latest (5.4) | same (Homebrew lua@5.4 via `PKG_CONFIG_PATH`/`LUA_BIN`) |
+| `windows` | windows-latest (5.4) | MSYS2 UCRT64 → `mingw32-make build/test` with `-Werror` |
+| `vendored-fallback` | ubuntu-latest (5.4) | builds against the vendored libwebp via CMake (no system libwebp), then regenerates fixtures and re-runs the suite |
+
+All jobs compile with `-O2 -std=c99 -Wall -Wextra -Werror`; the
+vendored-fallback job proves the "clone is enough to build" path and keeps
+fixtures reproducible. `.github/workflows/release.yml` runs on `v*` tags and
+publishes prebuilt modules for Linux, macOS and Windows.
 
 ## Usage
 
